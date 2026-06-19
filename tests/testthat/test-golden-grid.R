@@ -69,6 +69,12 @@ for (cs in names(cases)) {
           label     = paste(case_name, k, "estimate")
         )
       }
+
+      # Assert n_obs against golden value
+      gn <- g$estimate[g$key == "n_obs"]
+      if (length(gn) == 1 && is.finite(gn)) {
+        expect_equal(as.numeric(res$n_obs), gn, tolerance = 1, info = paste(case_name, "n_obs"))
+      }
     })
   })
 }
