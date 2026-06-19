@@ -1,0 +1,55 @@
+# didimpute
+
+An R port of the Python [`did_imputation`](https://github.com/kylebutts/did_imputation) package, implementing the imputation estimator of Borusyak, Jaravel and Spiess (2024, *Review of Economic Studies*) for staggered difference-in-differences designs.
+
+Full documentation: <https://xiangao.github.io/didimpute>
+
+## Installation
+
+```r
+# Install from GitHub
+remotes::install_github("xiangao/didimpute")
+```
+
+## Quick start
+
+The example below constructs a minimal synthetic staggered panel and estimates event-study effects at horizons 0, 1, and 2, with two pre-trend placebo coefficients.
+
+```r
+library(didimpute)
+
+# Synthetic staggered panel: 20 units, 10 periods
+set.seed(42)
+n_units <- 20; n_t <- 10
+panel <- expand.grid(i = seq_len(n_units), t = seq_len(n_t))
+
+# Units 1–10 treated at t = 6; units 11–20 are never treated
+panel$Ei <- ifelse(panel$i <= 10, 6L, NA_integer_)
+
+# DGP: treatment effect of 1.0 in post periods
+panel$y <- 1.0 * (!is.na(panel$Ei) & panel$t >= panel$Ei) +
+             rnorm(nrow(panel), sd = 0.5)
+
+# Estimate event study: horizons 0–2, two pre-trend placebo tests
+res <- did_impute(
+  panel,
+  y        = "y",
+  i        = "i",
+  t        = "t",
+  Ei       = "Ei",
+  horizons = 0:2,
+  pretrends = 2
+)
+
+# Tidy summary table
+summary(res)
+
+# Event-study plot (requires ggplot2)
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  event_plot(res)
+}
+```
+
+## Reference
+
+Borusyak, K., Jaravel, X., and Spiess, J. (2024). Revisiting Event-Study Designs: Robust and Efficient Estimation. *Review of Economic Studies*, 91(6), 3253–3285.

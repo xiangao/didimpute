@@ -14,7 +14,8 @@
 #' @param effects_std Named list of effect standard errors.
 #' @param plot_type \code{"rcap"} (error bars, default) or \code{"rarea"}
 #'   (shaded ribbon).
-#' @param significance_level Significance level for CIs (default 0.05 → 95\%).
+#' @param significance_level Significance level for CIs (default 0.05, giving
+#'   95 percent CIs).
 #' @param together Logical; if \code{TRUE} pre-trends and effects are combined
 #'   into a single series (default \code{FALSE}).
 #' @param xlab X-axis label.

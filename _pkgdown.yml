@@ -1,0 +1,23 @@
+url: https://xiangao.github.io/didimpute
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left:  [intro, reference, articles]
+    right: [github]
+
+reference:
+  - title: "Main estimator"
+    desc: "Imputation estimator for staggered DiD"
+    contents:
+      - did_impute
+  - title: "Visualization"
+    desc: "Event-study plot"
+    contents:
+      - event_plot
+  - title: "S3 methods"
+    desc: "Print and summary methods for did_impute objects"
+    contents:
+      - print.did_impute
+      - summary.did_impute

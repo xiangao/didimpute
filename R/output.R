@@ -1,8 +1,15 @@
 #' Print a did_impute result
 #'
-#' @param x a \code{did_impute} object
-#' @param ... ignored
-#' @return x, invisibly
+#' @param x a \code{did_impute} object.
+#' @param ... ignored.
+#' @return \code{x}, invisibly.
+#' @examples
+#' set.seed(1)
+#' panel <- expand.grid(i = 1:4, t = 1:6)
+#' panel$Ei <- ifelse(panel$i <= 2, 4L, NA_integer_)
+#' panel$y  <- 0.3 * (!is.na(panel$Ei) & panel$t >= panel$Ei) + rnorm(nrow(panel), sd = 0.1)
+#' res <- did_impute(panel, y = "y", i = "i", t = "t", Ei = "Ei")
+#' print(res)
 #' @export
 print.did_impute <- function(x, ...) {
   cat("<didimpute did_impute result>\n")
@@ -20,10 +27,21 @@ print.did_impute <- function(x, ...) {
 
 #' Summarise a did_impute result
 #'
-#' @param object a \code{did_impute} object
-#' @param ... ignored
-#' @return a \code{data.frame} with columns \code{term}, \code{estimate},
-#'   \code{std.error}
+#' Returns a tidy \code{data.frame} with one row per estimand (effects,
+#' pre-trends, and control coefficients combined).
+#'
+#' @param object a \code{did_impute} object.
+#' @param ... ignored.
+#' @return A \code{data.frame} with columns \code{term}, \code{estimate}, and
+#'   \code{std.error}.
+#' @examples
+#' set.seed(1)
+#' panel <- expand.grid(i = 1:4, t = 1:6)
+#' panel$Ei <- ifelse(panel$i <= 2, 4L, NA_integer_)
+#' panel$y  <- 0.3 * (!is.na(panel$Ei) & panel$t >= panel$Ei) + rnorm(nrow(panel), sd = 0.1)
+#' res <- did_impute(panel, y = "y", i = "i", t = "t", Ei = "Ei",
+#'                   horizons = 0:1, pretrends = 2, minn = 0)
+#' summary(res)
 #' @export
 summary.did_impute <- function(object, ...) {
   terms    <- names(object$estimates)

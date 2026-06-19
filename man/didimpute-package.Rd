@@ -8,6 +8,14 @@
 \description{
 A faithful R port of the Python did_imputation package implementing the imputation estimator of Borusyak, Jaravel and Spiess (2024) for staggered difference-in-differences, with event-study aggregation and plotting.
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://xiangao.github.io/didimpute}
+  \item Report bugs at \url{https://github.com/xiangao/didimpute/issues}
+}
+
+}
 \author{
 \strong{Maintainer}: Xao \email{xao@hbs.edu}
 

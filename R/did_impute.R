@@ -88,6 +88,153 @@ new_did_impute <- function(estimates = NULL, std_errors = NULL, pretrends_estima
 }
 
 #' Difference-in-differences imputation estimator (BJS 2024)
+#'
+#' Implements the imputation estimator of Borusyak, Jaravel and Spiess (2024,
+#' AER) for staggered difference-in-differences designs.  The estimator
+#' imputes each treated unit's counterfactual outcome from a two-way fixed
+#' effects model fit on untreated observations, then aggregates the resulting
+#' unit-level treatment effects into user-specified estimands.  Standard errors
+#' are cluster-robust (clustered by unit \code{i} by default) using the
+#' smartweights influence-function approach of the original Python package.
+#'
+#' @param df A data frame (or data.table) in long format.
+#' @param y Character. Name of the outcome column.
+#' @param i Character. Name of the unit identifier column.
+#' @param t Character. Name of the time column (must be integer-valued or
+#'   coercible to integer).
+#' @param Ei Character. Name of the treatment-timing column.  \code{NA}
+#'   indicates a never-treated unit; a finite integer is the first treated
+#'   period.
+#' @param controls Character vector of time-varying control variable names
+#'   (default: none).
+#' @param fe Character vector of fixed-effect column names.  Defaults to
+#'   \code{c(i, t)} (the standard two-way FE).
+#' @param timecontrols Not yet implemented; passing a non-empty vector raises
+#'   an error.
+#' @param aw Character. Name of an analytic-weight column, or \code{NULL}
+#'   (default).
+#' @param unitcontrols Not yet implemented; passing a non-empty vector raises
+#'   an error.
+#' @param wtr Character vector of user-supplied treatment-weight column names.
+#'   Cannot be combined with \code{horizons}, \code{allhorizons}, or
+#'   \code{hbalance}.
+#' @param sum Logical. If \code{TRUE}, sum effects rather than averaging
+#'   (weights are not normalised to sum to 1 over treated rows).  Default
+#'   \code{FALSE}.
+#' @param horizons Numeric vector of relative-time horizons at which to
+#'   estimate event-study effects (e.g. \code{0:3}).
+#' @param allhorizons Logical.  If \code{TRUE}, estimate effects at all
+#'   observed relative-time horizons (inferred from the data).  Cannot be
+#'   combined with \code{horizons}.
+#' @param hbalance Logical.  If \code{TRUE} and \code{horizons} is specified,
+#'   restrict to cohorts that are observed at every horizon in \code{horizons}
+#'   (horizon-balanced sample).
+#' @param hetby Not yet implemented; passing a non-empty vector raises an
+#'   error.
+#' @param project Not yet implemented; passing a non-empty vector raises an
+#'   error.
+#' @param minn Minimum effective sample size (default 30).  An estimand is
+#'   suppressed (weight set to zero) when its effective \emph{N} falls below
+#'   this threshold.  Set to 0 to disable.
+#' @param saveweights Logical.  If \code{TRUE}, include the per-observation
+#'   treatment weights in the returned object (not yet used by downstream
+#'   methods; included for API parity with the Python package).
+#' @param shift Integer.  Time shift applied when constructing relative time
+#'   and the untreated indicator (default 0).
+#' @param pretrends Non-negative integer.  Number of pre-treatment horizons at
+#'   which to estimate placebo ("pre-trend") coefficients.  Default 0 (none).
+#' @param cluster Character. Name of the cluster column for cluster-robust
+#'   standard errors.  Defaults to \code{i} (cluster by unit).
+#' @param avgeffectsby Character vector.  Columns that define the estimand
+#'   grouping used for the smartweights influence function.  Defaults to
+#'   \code{c(Ei, t)}.
+#' @param leaveoneout Not yet implemented; setting to \code{TRUE} raises an
+#'   error.
+#' @param nose Logical.  If \code{TRUE}, skip standard error computation.
+#'   Estimates are still returned.  Default \code{FALSE}.
+#' @param delta Integer or \code{NULL}.  Time-step size.  If \code{NULL}
+#'   (default) the step is detected automatically as the modal first difference
+#'   of the observed time values.
+#' @param seed Integer seed passed to \code{\link[base]{set.seed}} before the
+#'   randomised rank / collinearity check on the control variables.  Setting
+#'   a fixed seed makes this check reproducible across calls.  This is the one
+#'   deliberate deviation from the upstream Python package, which uses a
+#'   non-seeded random draw.  Default \code{1L}.
+#'
+#' @return An S3 object of class \code{"did_impute"} with the following
+#'   components:
+#'   \describe{
+#'     \item{\code{estimates}}{Named list of point estimates.  The baseline
+#'       case (no horizons, no user \code{wtr}) produces a single element
+#'       \code{tau_ate}.  Horizon estimates are named \code{tau0}, \code{tau1},
+#'       \ldots; user-weight estimates use the weight column names.}
+#'     \item{\code{std_errors}}{Named list of cluster-robust standard errors,
+#'       matching \code{estimates}.  \code{NULL} when \code{nose = TRUE}.}
+#'     \item{\code{pretrends_estimates}}{Named list of pre-trend (placebo)
+#'       coefficients (\code{pre1}, \code{pre2}, \ldots).  \code{NULL} when
+#'       \code{pretrends = 0}.}
+#'     \item{\code{pretrends_std_errors}}{Named list of cluster-robust SEs for
+#'       the pre-trend coefficients.  \code{NULL} when \code{pretrends = 0} or
+#'       \code{nose = TRUE}.}
+#'     \item{\code{controls_estimates}}{Named list of WLS coefficients on
+#'       \code{controls}.  \code{NULL} when \code{controls} is empty.}
+#'     \item{\code{controls_std_errors}}{Named list of cluster-robust SEs for
+#'       the control coefficients.  \code{NULL} when \code{controls} is empty
+#'       or \code{nose = TRUE}.}
+#'     \item{\code{n_obs}}{Total observation count entering the estimand
+#'       computation (untreated rows plus treated rows with non-zero weight).}
+#'     \item{\code{V}}{A scalar.  \code{V} mirrors the upstream Python
+#'       package's \code{V} field — the sum of squared standard errors across
+#'       all reported estimands (effects, pre-trends, and controls combined).
+#'       Reproduced for fidelity with the Python package; it does not
+#'       represent the full sandwich variance matrix.}
+#'     \item{\code{weights}}{Reserved for future use (\code{NULL} unless
+#'       \code{saveweights = TRUE} is requested; the field is included for API
+#'       parity with the Python package).}
+#'   }
+#'
+#' @details
+#' **Absorbed degrees of freedom.**  The cluster-robust SE scaling factor uses
+#' absorbed degrees of freedom (\eqn{df_a}) computed by a port of the
+#' \emph{pyhdfe} pairwise method: an FE that is nested within the cluster
+#' variable is dropped; the remaining FEs contribute their unique-level counts
+#' minus the number of bipartite connected components shared across pairs.
+#' This is exact for the default two-way FE / cluster-by-unit case and for any
+#' configuration with at most two non-nested fixed effects.  For more than two
+#' non-nested fixed effects the value is an approximation and a warning is
+#' emitted.
+#'
+#' **Unimplemented options.**  The arguments \code{timecontrols},
+#' \code{unitcontrols}, \code{leaveoneout}, \code{hetby}, and \code{project}
+#' match the Python package API but are not yet implemented; they raise an
+#' error if supplied.
+#'
+#' @seealso \code{\link{event_plot}}, \code{\link{summary.did_impute}},
+#'   \code{\link{print.did_impute}}
+#'
+#' @references Borusyak, K., Jaravel, X., and Spiess, J. (2024).
+#'   Revisiting Event-Study Designs: Robust and Efficient Estimation.
+#'   \emph{Review of Economic Studies}, 91(6), 3253--3285.
+#'
+#' @examples
+#' # Minimal synthetic staggered panel (4 units, 6 periods)
+#' set.seed(42)
+#' n_units <- 4; n_t <- 6
+#' panel <- expand.grid(i = seq_len(n_units), t = seq_len(n_t))
+#' panel$Ei <- ifelse(panel$i <= 2, 4L, NA_integer_)  # units 1-2 treated at t=4
+#' panel$y  <- 0.5 * (!is.na(panel$Ei) & panel$t >= panel$Ei) +
+#'               rnorm(nrow(panel), sd = 0.2)
+#'
+#' # Baseline ATT estimate
+#' res <- did_impute(panel, y = "y", i = "i", t = "t", Ei = "Ei")
+#' print(res)
+#'
+#' # Event-study with horizons 0 and 1; pretrends=2 avoids a known issue
+#' # where paste0() with integer(0) returns a spurious column name when
+#' # pretrends=1 and there are no other pretrend variables to regress out.
+#' res2 <- did_impute(panel, y = "y", i = "i", t = "t", Ei = "Ei",
+#'                    horizons = 0:1, pretrends = 2, minn = 0)
+#' summary(res2)
 #' @export
 did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
                        timecontrols = character(), aw = NULL, unitcontrols = character(),

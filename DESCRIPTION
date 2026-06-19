@@ -12,8 +12,13 @@ Imports:
     fixest,
     data.table,
     stats
+URL: https://xiangao.github.io/didimpute
+BugReports: https://github.com/xiangao/didimpute/issues
 Suggests:
     ggplot2,
+    knitr,
+    rmarkdown,
     testthat (>= 3.0.0)
+VignetteBuilder: knitr
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.0.0
