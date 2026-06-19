@@ -12,6 +12,7 @@ cases <- list(
   aw            = list(aw = "w", horizons = c(0, 1, 2)),
   controls      = list(controls = "x", horizons = c(0, 1, 2)),
   pretrends     = list(horizons = c(0, 1, 2), pretrends = 3),
+  pretrends1    = list(horizons = c(0, 1),    pretrends = 1),
   hbalance      = list(horizons = c(0, 1, 2), hbalance = TRUE),
   wtr_custom    = list(wtr = "w_treat"),
   minn_suppress = list(horizons = c(0, 1, 2), minn = 500),

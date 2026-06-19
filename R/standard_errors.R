@@ -174,7 +174,10 @@ compute_pretrends <- function(dt, y, fe, cluster, controls, pretrends, aw) {
     Y_h_resid <- drop(fixest::demean(Y_h, contr[, ..fe], weights = wcol))
 
     # Other pretrend vars + controls as RHS
-    other_pretrendvars <- paste0("pretrendvar_", setdiff(seq_len(pretrends), h))
+    # Guard: paste0("pretrendvar_", integer(0)) yields "pretrendvar_" (length 1) not
+    # character(0), so we must check the index before pasting.
+    others <- setdiff(seq_len(pretrends), h)
+    other_pretrendvars <- if (length(others) > 0L) paste0("pretrendvar_", others) else character(0)
     rhs_vars <- c(controls, other_pretrendvars)
     if (length(rhs_vars) > 0L) {
       X_h      <- as.matrix(contr[, ..rhs_vars])
