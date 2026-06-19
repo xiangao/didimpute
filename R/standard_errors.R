@@ -86,6 +86,132 @@ NULL
 }
 
 
+#' Compute cluster-robust standard errors for pretrend coefficients
+#'
+#' Faithful port of Python pretrends block (did_imputation.py lines 477-566,
+#' 700-704).  Operates on the untreated subsample after dropping singleton FE
+#' levels.  For each h=1..pretrends: residualise pretrendvar_h on FE (and other
+#' pretrend/control vars); WLS to get preresid; form per-observation preweight;
+#' normalise; cluster-sum preweight * preresid * sqrt(dof_adj).  Sandwich V = M'M.
+#'
+#' @param dt data.table (all rows, including treated — untreated filter applied
+#'   inside)
+#' @param y name of outcome column
+#' @param fe character vector of FE column names
+#' @param cluster name of cluster column
+#' @param controls character vector of control column names
+#' @param pretrends integer number of pretrend horizons (h = 1..pretrends)
+#' @param aw name of analytic weight column, or NULL
+#' @return list with \code{coefs} (named numeric) and \code{ses} (named numeric),
+#'   plus \code{list_pre_weps} (matrix of per-cluster influence vectors)
+#' @keywords internal
+compute_pretrends <- function(dt, y, fe, cluster, controls, pretrends, aw) {
+  # Build pretrendvar_h = 1{Rel_time == -h} on the full dataset (matching Python).
+  # NA Rel_time (never-treated units) => 0, not NA (Python NaN == -h is False).
+  for (h in seq_len(pretrends)) {
+    vname <- paste0("pretrendvar_", h)
+    rel_h <- dt[["Rel_time"]]
+    dt[, (vname) := as.numeric(!is.na(rel_h) & rel_h == -h)]
+  }
+  pretrendvars <- paste0("pretrendvar_", seq_len(pretrends))
+
+  # Restrict to untreated and drop singleton FE levels (Python lines 486-491)
+  contr <- data.table::copy(dt[untreated == 1L])
+  for (f in fe) {
+    cnt <- contr[, .N, by = f]
+    keep <- cnt[N > 1L][[f]]
+    contr <- contr[get(f) %in% keep]
+  }
+
+  wcol <- if (is.null(aw)) NULL else contr$wei
+
+  # Residualise [pretrendvars + controls] jointly on FE, with weights (Python 493-503)
+  all_xvars <- c(pretrendvars, controls)
+  ymat     <- as.matrix(contr[[y]])
+  y_resid  <- drop(fixest::demean(ymat, contr[, ..fe], weights = wcol))
+
+  if (length(all_xvars) > 0L) {
+    xmat    <- as.matrix(contr[, ..all_xvars])
+    X_resid <- fixest::demean(xmat, contr[, ..fe], weights = wcol)
+  } else {
+    X_resid <- matrix(1.0, nrow(contr), 1L)
+  }
+
+  ww <- if (is.null(aw)) rep(1.0, nrow(contr)) else contr$wei
+
+  # Compute df_a using cluster_ids (same as effect SE: FE nested in cluster dropped)
+  df_a <- .compute_df_a(contr, fe, cluster)
+
+  # WLS for pretrend coefs (Python line 508-514)
+  fit_main <- stats::lm.wfit(x = X_resid, y = y_resid, w = ww)
+  coef_all <- fit_main$coefficients  # length = pretrends + length(controls)
+  preresid <- y_resid - drop(X_resid %*% coef_all)
+
+  coefs <- stats::setNames(coef_all[seq_len(pretrends)], paste0("pre", seq_len(pretrends)))
+
+  ncl <- contr[, data.table::uniqueN(get(cluster))]
+  n_contr <- nrow(contr)
+
+  list_pre_weps <- list()
+  for (h in seq_len(pretrends)) {
+    pv <- paste0("pretrendvar_", h)
+    # Python line 522: if coef == 0 -> weps = 0
+    if (isTRUE(coefs[[paste0("pre", h)]] == 0)) {
+      list_pre_weps[[h]] <- rep(0.0, ncl)
+      next
+    }
+
+    # Demean pretrendvar_h on FE (no cluster_ids — Python uses create(ids) not create(ids, cluster_ids))
+    Y_h      <- as.matrix(contr[[pv]])
+    Y_h_resid <- drop(fixest::demean(Y_h, contr[, ..fe], weights = wcol))
+
+    # Other pretrend vars + controls as RHS
+    other_pretrendvars <- paste0("pretrendvar_", setdiff(seq_len(pretrends), h))
+    rhs_vars <- c(controls, other_pretrendvars)
+    if (length(rhs_vars) > 0L) {
+      X_h      <- as.matrix(contr[, ..rhs_vars])
+      X_h_resid <- fixest::demean(X_h, contr[, ..fe], weights = wcol)
+    } else {
+      X_h_resid <- matrix(1.0, nrow(contr), 1L)
+    }
+
+    # WLS -> preweight = residual (Python line 549)
+    fit_h    <- stats::lm.wfit(x = X_h_resid, y = Y_h_resid, w = ww)
+    preweight <- Y_h_resid - drop(X_h_resid %*% fit_h$coefficients)
+
+    # Normalise by sum over rows where pretrendvar_h == 1 (Python lines 551-556)
+    wei_vec <- if (is.null(aw)) rep(1.0, nrow(contr)) else contr$wei
+    preweight_weighted <- preweight * wei_vec
+    mask_h <- contr[[pv]] == 1
+    sumpreweight <- sum(preweight_weighted[mask_h])
+    if (sumpreweight != 0) {
+      preweight_normalized <- preweight_weighted / sumpreweight
+    } else {
+      preweight_normalized <- rep(0.0, length(preweight_weighted))
+    }
+
+    # product = normalized * preresid (Python line 558)
+    contr[, product := preweight_normalized * preresid]
+
+    # dof_adj: subtract pretrends in denominator (Python line 561)
+    dof_adj <- (n_contr - 1L) / (n_contr - length(controls) - pretrends - df_a + 1L) *
+               ncl / (ncl - 1L)
+
+    # per-cluster sum * sqrt(dof_adj) (Python line 564)
+    sums_dt <- contr[, .(v = sum(product)), by = cluster]
+    sums_dt <- sums_dt[order(get(cluster))]
+    list_pre_weps[[h]] <- sums_dt$v * sqrt(dof_adj)
+  }
+
+  # Build per-cluster influence matrix (each column = one pretrend horizon)
+  M    <- do.call(cbind, list_pre_weps)
+  V    <- t(M) %*% M
+  ses  <- stats::setNames(sqrt(diag(V)), paste0("pre", seq_len(pretrends)))
+
+  list(coefs = coefs, ses = ses, list_pre_weps = M)
+}
+
+
 #' Compute cluster-robust SEs for control-variable coefficients (influence function)
 #'
 #' Faithful port of Python \code{compute_controls_se} (did_imputation.py lines
@@ -171,7 +297,7 @@ compute_controls_se <- function(dt, controls, fe, cluster, aw, df_a, beta) {
   M <- do.call(cbind, list_ctrl_weps)
   V_cont <- t(M) %*% M
   se_cont <- sqrt(diag(V_cont))
-  stats::setNames(se_cont, controls)
+  list(ses = stats::setNames(se_cont, controls), list_ctrl_weps = M)
 }
 
 

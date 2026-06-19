@@ -288,7 +288,25 @@ did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
   }
 
   if (nose) {
-    return(new_did_impute(estimates = estimates, n_obs = n_obs))
+    # Python lines 592-612: pretrends_estimates still computed; controls_estimates too;
+    # but all SEs are NULL
+    nose_pretrends_estimates <- NULL
+    nose_controls_estimates  <- NULL
+    if (pretrends > 0L) {
+      # We need pretrend coefs even in nose mode; reuse compute_pretrends but
+      # ignore ses (Python still runs the WLS for coefs even in nose mode)
+      pret_nose <- compute_pretrends(data.table::copy(dt), y, fe, cluster, controls,
+                                     pretrends = pretrends,
+                                     aw = if (is.null(aw)) NULL else aw)
+      nose_pretrends_estimates <- as.list(pret_nose$coefs)
+    }
+    if (length(controls) > 0L) {
+      nose_controls_estimates <- as.list(imp$beta)
+    }
+    return(new_did_impute(estimates = estimates,
+                          pretrends_estimates = nose_pretrends_estimates,
+                          controls_estimates  = nose_controls_estimates,
+                          n_obs = n_obs))
   }
 
   se_out <- compute_effect_se(data.table::copy(dt), wtr, y, cluster, avgeffectsby, gr_var, fe,
@@ -304,14 +322,46 @@ did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
     # cluster_ids: drops FEs nested within cluster => only t contributes)
     dt_untr_c <- dt[untreated == 1L]
     df_a <- .compute_df_a(dt_untr_c, fe, cluster)
-    ctrl_se <- compute_controls_se(dt, controls, fe, cluster,
-                                   aw = if (is.null(aw)) NULL else aw,
-                                   df_a = df_a, beta = imp$beta)
-    controls_std_errors <- as.list(ctrl_se)
+    ctrl_out <- compute_controls_se(dt, controls, fe, cluster,
+                                    aw = if (is.null(aw)) NULL else aw,
+                                    df_a = df_a, beta = imp$beta)
+    controls_std_errors <- as.list(ctrl_out$ses)
+    list_ctrl_weps <- ctrl_out$list_ctrl_weps
+  } else {
+    list_ctrl_weps <- NULL
   }
 
+  # ---- Pretrends (Task 9) -----------------------------------------------------
+  pretrends_estimates <- NULL
+  pretrends_std_errors <- NULL
+  list_pre_weps <- NULL
+  if (pretrends > 0L) {
+    pret_out <- compute_pretrends(data.table::copy(dt), y, fe, cluster, controls,
+                                  pretrends = pretrends,
+                                  aw = if (is.null(aw)) NULL else aw)
+    pretrends_estimates <- as.list(pret_out$coefs)
+    pretrends_std_errors <- as.list(pret_out$ses)
+    list_pre_weps <- pret_out$list_pre_weps
+  }
+
+  # ---- Combined V (Python lines 709-722) ----------------------------------------
+  # Stack per-cluster influence vectors: effects (G), pretrends, controls
+  # V_total = X_mat' X_mat where X_mat = cbind(sqrt_diag_V_effects, V_pret_cols, V_cont_cols)
+  # Python: "matrices = [mat for mat in [V, V_pret, V_cont] if mat is not None]"
+  # V  = sqrt(diag(G'G)) — a vector; V_pret / V_cont are also sqrt(diag) vectors.
+  # The combined V is formed by cbind-ing the influence matrices (group_sums cols,
+  # pre_weps cols, ctrl_weps cols) and computing X'X.
+  mats <- list()
+  mats <- c(mats, list(se_out$group_sums))           # effect influence matrix (n_cl x n_effects)
+  if (!is.null(list_pre_weps)) mats <- c(mats, list(list_pre_weps))
+  if (!is.null(list_ctrl_weps)) mats <- c(mats, list(list_ctrl_weps))
+  X_mat <- do.call(cbind, mats)
+  V_total <- t(X_mat) %*% X_mat
+
   new_did_impute(estimates = estimates, std_errors = std_errors,
+                 pretrends_estimates = pretrends_estimates,
+                 pretrends_std_errors = pretrends_std_errors,
                  controls_estimates = controls_estimates,
                  controls_std_errors = controls_std_errors,
-                 n_obs = n_obs, V = se_out$V)
+                 n_obs = n_obs, V = V_total)
 }
