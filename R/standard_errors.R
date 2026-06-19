@@ -216,6 +216,10 @@ compute_pretrends <- function(dt, y, fe, cluster, controls, pretrends, aw) {
 
   # Build per-cluster influence matrix (each column = one pretrend horizon)
   M    <- do.call(cbind, list_pre_weps)
+  # Attach cluster IDs as rownames for cross-component alignment in did_impute().
+  # Derive ordered cluster IDs from the untreated subsample.
+  cl_ids_pre <- sort(unique(as.character(contr[[cluster]])))
+  rownames(M) <- cl_ids_pre
   V    <- t(M) %*% M
   ses  <- stats::setNames(sqrt(diag(V)), paste0("pre", seq_len(pretrends)))
 
@@ -306,6 +310,10 @@ compute_controls_se <- function(dt, controls, fe, cluster, aw, df_a, beta) {
   }
 
   M <- do.call(cbind, list_ctrl_weps)
+  # Attach cluster IDs as rownames for cross-component alignment in did_impute().
+  # Derive ordered cluster IDs from the untreated subsample.
+  cl_ids_ctrl <- sort(unique(as.character(contr[[cluster]])))
+  rownames(M) <- cl_ids_ctrl
   V_cont <- t(M) %*% M
   se_cont <- sqrt(diag(V_cont))
   list(ses = stats::setNames(se_cont, controls), list_ctrl_weps = M)
@@ -434,6 +442,11 @@ compute_effect_se <- function(dt, wtr, y, cluster, avgeffectsby, gr_var, fe,
   }
 
   G <- do.call(cbind, group_sums_list)
+  # Attach cluster IDs as rownames for cross-component alignment in did_impute().
+  # gs_agg (from last loop iteration) is sorted by cluster ID and covers all clusters.
+  if (ncol(G) > 0L) {
+    rownames(G) <- as.character(gs_agg$.cl_)
+  }
   V <- t(G) %*% G
   ses <- sqrt(diag(V))
   list(se = ses, group_sums = G, V = V)

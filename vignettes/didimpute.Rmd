@@ -169,7 +169,7 @@ print(res_nose)
 
 ## The `V` field
 
-The returned object includes a scalar `V`.  This mirrors the upstream Python package's `V` field: it is the sum of squared standard errors across all reported estimands (effects, pre-trends, and controls combined).  It is reproduced for fidelity with the Python package and does not represent a full sandwich variance matrix.
+The returned object includes a square covariance matrix `V` of dimension $K \times K$, where $K$ is the total number of reported estimands (effects, then pre-trends, then controls, in that order).  Row and column names match the estimand names.  `sqrt(diag(res$V))` reproduces the reported per-estimand standard errors to numerical precision.  This is a deliberate improvement over the upstream Python package, whose `V` was a scalar (sum of squared standard errors).  `V` is `NULL` when `nose = TRUE` or when no standard-error components are present.
 
 ## Unimplemented options
 

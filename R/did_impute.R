@@ -185,11 +185,14 @@ new_did_impute <- function(estimates = NULL, std_errors = NULL, pretrends_estima
 #'       or \code{nose = TRUE}.}
 #'     \item{\code{n_obs}}{Total observation count entering the estimand
 #'       computation (untreated rows plus treated rows with non-zero weight).}
-#'     \item{\code{V}}{A scalar.  \code{V} mirrors the upstream Python
-#'       package's \code{V} field — the sum of squared standard errors across
-#'       all reported estimands (effects, pre-trends, and controls combined).
-#'       Reproduced for fidelity with the Python package; it does not
-#'       represent the full sandwich variance matrix.}
+#'     \item{\code{V}}{A square covariance matrix of dimension \eqn{K \times K},
+#'       where \eqn{K} is the total number of reported estimands (effects, then
+#'       pre-trends, then controls, in that order).  Row and column names match
+#'       the estimand names.  \code{sqrt(diag(V))} reproduces the reported
+#'       per-estimand standard errors to numerical precision.  This is a
+#'       deliberate improvement over the upstream Python package, whose \code{V}
+#'       was a scalar (sum of squared SEs).  \code{NULL} when \code{nose = TRUE}
+#'       or when no standard-error components are present.}
 #'     \item{\code{weights}}{Reserved for future use (\code{NULL} unless
 #'       \code{saveweights = TRUE} is requested; the field is included for API
 #'       parity with the Python package).}
@@ -491,16 +494,58 @@ did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
     list_pre_weps <- pret_out$list_pre_weps
   }
 
-  # ---- Combined V (Python lines 715-722) ----------------------------------------
-  # Python hstacks the SE vectors (V, V_pret, V_cont) into a 1-D array, then
-  # computes X_mat.T @ X_mat.  Since X_mat is 1-D, this equals sum(SEs^2) — a scalar.
-  # `V` mirrors the upstream Python package's `V` field, which is the sum of squared
-  # standard errors across all reported estimands (a scalar). This is a faithful
-  # reproduction of the upstream behavior.
-  se_vecs <- c(unlist(std_errors),
-               if (!is.null(pretrends_std_errors)) unlist(pretrends_std_errors),
-               if (!is.null(controls_std_errors))  unlist(controls_std_errors))
-  V_total <- if (length(se_vecs) == 0L) NULL else sum(se_vecs^2)
+  # ---- Combined V: full cluster-robust covariance matrix of all estimands --------
+  # Improvement over the upstream Python package (whose V was a scalar = sum of
+  # squared SEs).  V is now a (K x K) covariance matrix where K = total estimands
+  # (effects, then pretrends, then controls).  sqrt(diag(V)) == reported SEs.
+  #
+  # Each component already returns a (clusters x estimands) per-cluster influence
+  # matrix with cluster IDs as rownames.  We align all components to the union of
+  # cluster IDs (zero-filling absent clusters) then cbind and crossprod.
+  G_eff  <- se_out$group_sums                          # clusters_eff x n_effects
+  G_pret <- if (!is.null(list_pre_weps)) list_pre_weps else NULL  # clusters_pre x n_pre
+  G_cont <- if (!is.null(list_ctrl_weps)) list_ctrl_weps else NULL  # clusters_ctrl x n_ctrl
+
+  # Collect non-NULL matrices
+  mats <- Filter(Negate(is.null), list(G_eff, G_pret, G_cont))
+
+  if (length(mats) == 0L) {
+    V_total <- NULL
+  } else {
+    # Union of all cluster IDs (as character, sorted for determinism)
+    all_cls <- sort(unique(unlist(lapply(mats, rownames))))
+
+    # Zero-fill each matrix to the full union of clusters
+    align_mat <- function(M) {
+      if (is.null(M) || nrow(M) == 0L) return(NULL)
+      nc <- ncol(M)
+      out <- matrix(0.0, nrow = length(all_cls), ncol = nc,
+                    dimnames = list(all_cls, colnames(M)))
+      present <- rownames(M)
+      out[present, ] <- M
+      out
+    }
+
+    G_eff_a  <- align_mat(G_eff)
+    G_pret_a <- align_mat(G_pret)
+    G_cont_a <- align_mat(G_cont)
+
+    # Bind present components (drop NULLs)
+    G_parts <- Filter(Negate(is.null), list(G_eff_a, G_pret_a, G_cont_a))
+    G_all <- do.call(cbind, G_parts)
+
+    # Estimand names in documented order: effects, pretrends, controls
+    est_names <- c(
+      names(estimates),
+      if (!is.null(pretrends_estimates)) names(pretrends_estimates),
+      if (!is.null(controls_estimates))  names(controls_estimates)
+    )
+    colnames(G_all) <- est_names
+
+    V_total <- crossprod(G_all)   # t(G_all) %*% G_all
+    rownames(V_total) <- est_names
+    colnames(V_total) <- est_names
+  }
 
   new_did_impute(estimates = estimates, std_errors = std_errors,
                  pretrends_estimates = pretrends_estimates,

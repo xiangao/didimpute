@@ -148,11 +148,14 @@ the control coefficients.  \code{NULL} when \code{controls} is empty
 or \code{nose = TRUE}.}
 \item{\code{n_obs}}{Total observation count entering the estimand
 computation (untreated rows plus treated rows with non-zero weight).}
-\item{\code{V}}{A scalar.  \code{V} mirrors the upstream Python
-package's \code{V} field — the sum of squared standard errors across
-all reported estimands (effects, pre-trends, and controls combined).
-Reproduced for fidelity with the Python package; it does not
-represent the full sandwich variance matrix.}
+\item{\code{V}}{A square covariance matrix of dimension \eqn{K \times K},
+where \eqn{K} is the total number of reported estimands (effects, then
+pre-trends, then controls, in that order).  Row and column names match
+the estimand names.  \code{sqrt(diag(V))} reproduces the reported
+per-estimand standard errors to numerical precision.  This is a
+deliberate improvement over the upstream Python package, whose \code{V}
+was a scalar (sum of squared SEs).  \code{NULL} when \code{nose = TRUE}
+or when no standard-error components are present.}
 \item{\code{weights}}{Reserved for future use (\code{NULL} unless
 \code{saveweights = TRUE} is requested; the field is included for API
 parity with the Python package).}
