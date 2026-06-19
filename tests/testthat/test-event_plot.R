@@ -62,3 +62,22 @@ test_that("event_plot via explicit dict args works and CIs use qnorm(1-alpha/2)*
   row0 <- p$data[p$data$x == 0, ]
   expect_equal(row0$err, cv * 0.05, tolerance = 1e-10)
 })
+
+test_that("together mode zero-fills the side missing SEs (Python parity)", {
+  skip_if_not_installed("ggplot2")
+  # effects have SEs, pretrends do not
+  pre_est  <- list(pre1 = 0.1, pre2 = -0.2)
+  eff_est  <- list(tau0 = 1.0, tau1 = 2.0)
+  eff_se   <- list(tau0 = 0.3, tau1 = 0.4)
+  p <- event_plot(pretrends = pre_est, pretrends_std = NULL,
+                  effects = eff_est, effects_std = eff_se,
+                  together = TRUE)
+  expect_s3_class(p, "ggplot")
+  # no NA in err: the pretrends side must be zero-filled, not NA
+  expect_false(any(is.na(p$data$err)))
+  # pretrends-side err (x < 0) should be 0, effects-side err (x >= 0) should be non-zero
+  expect_true(all(p$data$err[p$data$x < 0] == 0))
+  cv <- qnorm(0.975)
+  expect_equal(p$data$err[p$data$x == 0], cv * 0.3, tolerance = 1e-10)
+  expect_equal(p$data$err[p$data$x == 1], cv * 0.4, tolerance = 1e-10)
+})

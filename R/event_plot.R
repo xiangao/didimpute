@@ -99,7 +99,24 @@ event_plot <- function(results_obj = NULL,
   if (together) {
     # Merge into one series; use effects colour/label
     df_all <- rbind(df_pre, df_eff)
-    if (!is.null(df_all)) df_all$group <- "Effects"
+    if (!is.null(df_all)) {
+      # Zero-fill missing-SE side (Python parity)
+      # Identify which side has errors
+      pre_has_err  <- !is.null(df_pre) && any(!is.na(df_pre$err))
+      eff_has_err  <- !is.null(df_eff) && any(!is.na(df_eff$err))
+
+      # If only one side has errors, zero-fill the other side
+      if (pre_has_err && !eff_has_err) {
+        # Effects missing SEs: set effects err to 0
+        df_all$err[is.na(df_all$err)] <- 0.0
+      } else if (!pre_has_err && eff_has_err) {
+        # Pretrends missing SEs: set pretrends err to 0
+        df_all$err[is.na(df_all$err)] <- 0.0
+      }
+      # If both have errors or neither has errors, leave as-is
+
+      df_all$group <- "Effects"
+    }
     df <- df_all
     color_map <- c("Effects" = effects_color)
   } else {
