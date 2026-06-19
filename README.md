@@ -1,6 +1,6 @@
 # didimpute
 
-An R port of the Python [`did_imputation`](https://github.com/kylebutts/did_imputation) package, implementing the imputation estimator of Borusyak, Jaravel and Spiess (2024, *Review of Economic Studies*) for staggered difference-in-differences designs.
+An R port of Georgii Marinichev's Python [`did_imputation`](https://github.com/Gmarinichev/did_imputation) package, implementing the imputation estimator of Borusyak, Jaravel and Spiess (2024, *Review of Economic Studies*) for staggered difference-in-differences designs. (A separate, independent R implementation is also available as [`didimputation`](https://github.com/kylebutts/didimputation) by Kyle Butts.)
 
 Full documentation: <https://xiangao.github.io/didimpute>
 

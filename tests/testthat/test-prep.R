@@ -23,6 +23,14 @@ test_that("rows with NA in a required column are dropped; NA in Ei is kept", {
   expect_equal(sum(p$df$untreated == 1), 4)   # only (1,t=2) would be treated but it's the dropped row -> all remaining untreated
 })
 
+test_that("all-treated input errors cleanly instead of crashing", {
+  # Ei=1 for all units, t in {1,2}: untreated condition is t+0 < 1 => never true
+  # => every row is treated => untreated subset is empty => guard fires
+  df <- data.frame(i=c(1,1,2,2), t=c(1L,2L,1L,2L), Ei=c(1,1,1,1), y=c(1,2,3,4))
+  expect_error(did_impute(df, y="y", i="i", t="t", Ei="Ei"),
+               "No untreated|untreated")
+})
+
 test_that("untreated mask and Rel_time follow the BJS definition", {
   df <- data.frame(i = c(1, 1, 2, 2), t = c(1L, 2L, 1L, 2L),
                    Ei = c(2, 2, NA, NA), y = c(1, 2, 3, 4))

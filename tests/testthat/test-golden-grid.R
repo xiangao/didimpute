@@ -47,7 +47,7 @@ for (cs in names(cases)) {
       res <- do.call(did_impute, c(list(df = d, y = "y", i = "i",
                                         t = "t", Ei = "Ei"), args))
 
-      # Build a named vector of all numeric outputs
+      # Build a named vector of all numeric outputs (estimates)
       flat <- c(
         stats::setNames(unlist(res$estimates),
                         paste0("effect:", names(res$estimates))),
@@ -57,6 +57,18 @@ for (cs in names(cases)) {
         if (!is.null(res$controls_estimates))
           stats::setNames(unlist(res$controls_estimates),
                           paste0("control:", names(res$controls_estimates)))
+      )
+
+      # Build a named vector of all SE outputs (parallel to flat)
+      flat_se <- c(
+        stats::setNames(unlist(res$std_errors),
+                        paste0("effect:", names(res$std_errors))),
+        if (!is.null(res$pretrends_std_errors))
+          stats::setNames(unlist(res$pretrends_std_errors),
+                          paste0("pre:", names(res$pretrends_std_errors))),
+        if (!is.null(res$controls_std_errors))
+          stats::setNames(unlist(res$controls_std_errors),
+                          paste0("control:", names(res$controls_std_errors)))
       )
 
       # Compare every estimate key against the golden CSV
@@ -69,6 +81,19 @@ for (cs in names(cases)) {
           tolerance = 1e-6,
           label     = paste(case_name, k, "estimate")
         )
+      }
+
+      # Compare every SE key against the golden CSV (skip NA/non-finite golden SEs)
+      for (k in names(flat_se)) {
+        golden_se <- g$se[g$key == k]
+        if (length(golden_se) == 1 && !is.na(golden_se) && is.finite(golden_se)) {
+          expect_equal(
+            unname(flat_se[[k]]),
+            golden_se,
+            tolerance = 1e-6,
+            label     = paste(case_name, k, "se")
+          )
+        }
       }
 
       # Assert n_obs against golden value

@@ -42,6 +42,8 @@ NULL
 .impute_y0 <- function(prep, y, controls, fe, cluster, aw) {
   dt <- prep$df
   untr <- dt[untreated == 1]
+  if (nrow(untr) == 0L)
+    stop("No untreated (control) observations available for imputation; cannot estimate Y(0).")
   wcol <- if (is.null(aw)) NULL else untr$wei
 
   ymat <- as.matrix(untr[[y]])
