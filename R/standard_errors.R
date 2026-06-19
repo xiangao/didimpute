@@ -149,14 +149,22 @@ compute_pretrends <- function(dt, y, fe, cluster, controls, pretrends, aw) {
 
   coefs <- stats::setNames(coef_all[seq_len(pretrends)], paste0("pre", seq_len(pretrends)))
 
+  # Standard (non-cluster) SEs from WLS fit — used for skip condition below.
+  # Python results.bse is the standard statsmodels WLS SE (same quantity).
+  sigma2_main <- if (fit_main$df.residual > 0L)
+    sum(fit_main$weights * fit_main$residuals^2) / fit_main$df.residual else 0.0
+  XtWX_inv <- tryCatch(solve(crossprod(X_resid * sqrt(ww))), error = function(e) NULL)
+  main_bse <- if (!is.null(XtWX_inv))
+    sqrt(pmax(0.0, sigma2_main * diag(XtWX_inv))) else rep(0.0, length(coef_all))
+
   ncl <- contr[, data.table::uniqueN(get(cluster))]
   n_contr <- nrow(contr)
 
   list_pre_weps <- list()
   for (h in seq_len(pretrends)) {
     pv <- paste0("pretrendvar_", h)
-    # Python line 522: if coef == 0 -> weps = 0
-    if (isTRUE(coefs[[paste0("pre", h)]] == 0)) {
+    # Python line 522: skip (set weps=0) only when coef==0 AND se==0 (standard WLS SE).
+    if (isTRUE(coefs[[paste0("pre", h)]] == 0) && isTRUE(main_bse[[h]] == 0)) {
       list_pre_weps[[h]] <- rep(0.0, ncl)
       next
     }

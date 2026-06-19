@@ -13,6 +13,16 @@ test_that("summary returns data.frame with term/estimate/std.error", {
   expect_s3_class(s, "data.frame")
   expect_true(all(c("term", "estimate", "std.error") %in% names(s)))
   expect_true(all(c("tau0", "tau1") %in% names(res$estimates)))
+  s <- summary(res)
+  expect_true(all(c("tau0", "tau1") %in% s$term))
+})
+
+test_that("V is a scalar sum-of-squared-SEs for pretrends+controls run", {
+  d <- read.csv(test_path("fixtures", "baseline_data.csv"))
+  d$ctrl <- rnorm(nrow(d))
+  res <- did_impute(d, y = "y", i = "i", t = "t", Ei = "Ei", horizons = c(0, 1),
+                    pretrends = 2, controls = "ctrl")
+  expect_true(is.numeric(res$V) && length(res$V) == 1L)
 })
 
 test_that("summary with pretrends includes pretrend rows", {
