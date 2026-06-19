@@ -147,12 +147,18 @@ did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
       for (h in horizons) {
         v <- paste0("wtr", h)
         dt[, (v) := as.numeric(Rel_time == h & sumh == length(horizons))]
+        na_idx <- is.na(dt[[v]])
+        if (any(na_idx)) data.table::set(dt, i = which(na_idx), j = v, value = 0.0)
         horlist <- c(horlist, v); hornames <- c(hornames, paste0("tau", h))
       }
     } else {
       for (h in horizons) {
         v <- paste0("wtr", h)
+        # NA == h yields NA in R (unlike Python where NaN == h is False);
+        # replace NA with 0 so never-treated rows (NA Rel_time) get weight 0.
         dt[, (v) := as.numeric(Rel_time == h)]
+        na_idx <- is.na(dt[[v]])
+        if (any(na_idx)) data.table::set(dt, i = which(na_idx), j = v, value = 0.0)
         horlist <- c(horlist, v); hornames <- c(hornames, paste0("tau", h))
       }
     }
@@ -231,5 +237,40 @@ did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
   }
   n_obs <- nrow(dt[!treated_mask | need_imputation, ])
 
-  new_did_impute(estimates = estimates, n_obs = n_obs)
+  # ---- Standard errors (Task 7) -------------------------------------------
+  gr_var <- unique(c(cluster, avgeffectsby))
+
+  # Small-cohort warning (Python lines 615-640)
+  dt[, treat_cohorts := .GRP, by = avgeffectsby]
+  max_coh <- max(dt$treat_cohorts)
+  if (!is_horizon && !flag_wtr) {
+    flag_small <- FALSE
+    for (coh in seq_len(max_coh)) {
+      sub <- dt[treat_cohorts == coh & untreated == 0L]
+      ndist <- length(unique(sub[[i]]))
+      if (ndist != 0L && ndist < 15L) { flag_small <- TRUE; break }
+    }
+    if (flag_small)
+      message("The number of treated entities is too small for some cohorts. Standard Errors may be wrong, consider using avgeffectsby option, averaging the the effect by treated X post variable.")
+  } else {
+    for (v in wtr) {
+      flag_v <- FALSE
+      for (coh in seq_len(max_coh)) {
+        sub <- dt[treat_cohorts == coh & dt[[v]] != 0]
+        ndist <- length(unique(sub[[i]]))
+        if (ndist != 0L && ndist < 15L) { flag_v <- TRUE; break }
+      }
+      if (flag_v)
+        message(sprintf("The number of treated entities for '%s' is too small for some cohorts. Standard Errors may be wrong; consider using avgeffectsby option, averaging the the effect by treated X post variable.", v))
+    }
+  }
+
+  if (nose) {
+    return(new_did_impute(estimates = estimates, n_obs = n_obs))
+  }
+
+  se_out <- compute_effect_se(data.table::copy(dt), wtr, y, cluster, avgeffectsby, gr_var, fe)
+  std_errors <- as.list(stats::setNames(se_out$se, names(estimates)))
+  new_did_impute(estimates = estimates, std_errors = std_errors, n_obs = n_obs,
+                 V = se_out$V)
 }
