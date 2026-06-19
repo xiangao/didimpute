@@ -67,10 +67,17 @@ estimates keyed \code{tau<k>} at \eqn{x = +k}.  Confidence intervals use the
 critical value \eqn{z_{1-\alpha/2}}.
 }
 \examples{
-\dontrun{
+\dontshow{if (requireNamespace("ggplot2", quietly = TRUE)) withAutoprint(\{ # examplesIf}
+# Minimal synthetic panel for event-study
+set.seed(42)
+n_units <- 4; n_t <- 6
+df <- expand.grid(i = seq_len(n_units), t = seq_len(n_t))
+df$Ei <- ifelse(df$i <= 2, 4L, NA_integer_)
+df$y <- 0.5 * (!is.na(df$Ei) & df$t >= df$Ei) + rnorm(nrow(df), sd = 0.2)
+
 res <- did_impute(df, y = "y", i = "i", t = "t", Ei = "Ei",
-                  horizons = 0:2, pretrends = 2)
+                  horizons = 0:2, pretrends = 2, minn = 0)
 event_plot(res)
 event_plot(res, plot_type = "rarea", together = TRUE)
-}
+\dontshow{\}) # examplesIf}
 }

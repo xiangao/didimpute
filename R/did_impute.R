@@ -229,11 +229,9 @@ new_did_impute <- function(estimates = NULL, std_errors = NULL, pretrends_estima
 #' res <- did_impute(panel, y = "y", i = "i", t = "t", Ei = "Ei")
 #' print(res)
 #'
-#' # Event-study with horizons 0 and 1; pretrends=2 avoids a known issue
-#' # where paste0() with integer(0) returns a spurious column name when
-#' # pretrends=1 and there are no other pretrend variables to regress out.
+#' # Event-study with horizons 0 and 1 and one pre-period
 #' res2 <- did_impute(panel, y = "y", i = "i", t = "t", Ei = "Ei",
-#'                    horizons = 0:1, pretrends = 2, minn = 0)
+#'                    horizons = 0:1, pretrends = 1, minn = 0)
 #' summary(res2)
 #' @export
 did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
