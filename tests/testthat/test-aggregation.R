@@ -9,6 +9,10 @@ golden_check <- function(case, args) {
     expect_equal(unname(res$estimates[[nm]]),
                  g$estimate[g$key == k], tolerance = 1e-6, info = paste(case, nm))
   }
+  gn <- g$estimate[g$key == "n_obs"]
+  if (length(gn) == 1 && is.finite(gn)) {
+    expect_equal(as.numeric(res$n_obs), gn, tolerance = 1, info = paste(case, "n_obs"))
+  }
 }
 
 test_that("horizons match python",    golden_check("horizons",    list(horizons = c(0, 1, 2, 3))))
