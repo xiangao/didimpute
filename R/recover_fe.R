@@ -33,8 +33,8 @@ recover_fe <- function(df, fe_cols, combined_col, weight_col,
       } else {
         other_sum <- 0
       }
-      diff <- combined - other_sum
-      num <- tapply(diff * w, keys[[cur]], sum)
+      resid <- combined - other_sum
+      num <- tapply(resid * w, keys[[cur]], sum)
       den <- tapply(w, keys[[cur]], sum)
       effects[[cur]] <- c(num / den)          # c() drops tapply's dim; keeps names
     }
