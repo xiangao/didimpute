@@ -1,0 +1,5 @@
+key,estimate,se
+effect:tau0,0.0,0.0
+effect:tau1,0.0,0.0
+effect:tau2,0.0,0.0
+n_obs,250.0,

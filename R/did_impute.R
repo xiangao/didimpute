@@ -121,15 +121,115 @@ did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
   ycol <- y
   dt[, tau := dt[[ycol]] - y_hat]
 
-  # default wtr = treated indicator, normalized over treated wei
+  # ---- Aggregation (Task 6) -----------------------------------------------
   flag_wtr <- length(wtr) != 0
-  if (!flag_wtr && length(horizons) == 0 && !allhorizons) {
+
+  # Python lines 345-348: default treated-indicator weight if no user wtr provided
+  # (unconditional — needed for allhorizons to filter on "wtr" column)
+  if (length(wtr) == 0) {
     dt[, wtr := as.numeric(untreated == 0)]
-    if (!sum) dt[, wtr := wtr / base::sum(dt[untreated == 0, wtr * wei])]
-    ate <- dt[untreated == 0, base::sum(tau * wtr * wei)]
-    estimates <- list(tau_ate = ate)
-  } else {
-    stop("horizons / wtr path arrives in Task 6")
+    wtr <- "wtr"
   }
-  new_did_impute(estimates = estimates, n_obs = dt[, .N])
+
+  if (allhorizons) {
+    if (length(horizons) > 0) stop("Options horizons and allhorizons cannot be combined")
+    # Use current wtr column to find valid Rel_time values
+    horizons <- sort(unique(dt[untreated == 0 & !is.na(dt[["wtr"]]) & dt[["wtr"]] != 0, Rel_time]))
+  }
+
+  is_horizon <- length(horizons) > 0
+  wtrnames <- NULL
+  if (is_horizon) {
+    horlist <- character(); hornames <- character()
+    if (hbalance) {
+      dt[, inhorizons := as.integer(Rel_time %in% horizons)]
+      dt[, sumh := sum(inhorizons), by = c(i)]
+      for (h in horizons) {
+        v <- paste0("wtr", h)
+        dt[, (v) := as.numeric(Rel_time == h & sumh == length(horizons))]
+        horlist <- c(horlist, v); hornames <- c(hornames, paste0("tau", h))
+      }
+    } else {
+      for (h in horizons) {
+        v <- paste0("wtr", h)
+        dt[, (v) := as.numeric(Rel_time == h)]
+        horlist <- c(horlist, v); hornames <- c(hornames, paste0("tau", h))
+      }
+    }
+    wtr <- horlist; wtrnames <- hornames
+  }
+
+  # Normalize each weight over treated weight mass unless sum=TRUE
+  if (!sum) {
+    for (v in wtr) {
+      wv <- dt[[v]]
+      ww <- dt$wei
+      denom <- base::sum(wv[dt$untreated == 0] * ww[dt$untreated == 0], na.rm = TRUE)
+      dt[, (v) := dt[[v]] / denom]
+    }
+  }
+
+  # minn suppression (strict >)
+  if (minn != 0) {
+    for (v in wtr) {
+      mask <- dt$untreated == 0
+      wv <- dt[[v]][mask]
+      ww <- dt$wei[mask]
+      sab <- base::sum(abs(wv) * ww, na.rm = TRUE)
+      if (sab != 0) {
+        tmp <- (wv * ww / sab)^2
+        if (base::sum(tmp, na.rm = TRUE) > 1 / minn) {
+          dt[, (v) := 0]
+          message(sprintf("WARNING: suppressing %s, consider lower minn or minn=0.", v))
+        }
+      } else {
+        message(sprintf("WARNING: %s has zero total weight, no data available.", v))
+      }
+    }
+  }
+
+  # Effects
+  estimates <- list()
+  if (!is_horizon && !flag_wtr) {
+    # baseline case: tau_ate
+    wv <- dt[["wtr"]]
+    ww <- dt$wei
+    tau_v <- dt$tau
+    mask <- dt$untreated == 0
+    estimates[["tau_ate"]] <- base::sum(tau_v[mask] * wv[mask] * ww[mask], na.rm = TRUE)
+  } else if (!flag_wtr) {
+    # horizon case: tau0, tau1, etc. — key = int(float(v.lstrip("wtr")))
+    for (k in seq_along(wtr)) {
+      v <- wtr[k]
+      wv <- dt[[v]]
+      ww <- dt$wei
+      tau_v <- dt$tau
+      mask <- dt$untreated == 0
+      estimates[[wtrnames[k]]] <- base::sum(tau_v[mask] * wv[mask] * ww[mask], na.rm = TRUE)
+    }
+  } else {
+    # user wtr: key = v itself
+    for (v in wtr) {
+      wv <- dt[[v]]
+      ww <- dt$wei
+      tau_v <- dt$tau
+      mask <- dt$untreated == 0
+      estimates[[v]] <- base::sum(tau_v[mask] * wv[mask] * ww[mask], na.rm = TRUE)
+    }
+  }
+
+  # n_obs: untreated rows PLUS treated rows with any nonzero, non-NA weight
+  treated_mask <- dt$untreated == 0
+  if (length(wtr) > 0) {
+    any_nonzero_wtr <- Reduce(`|`, lapply(wtr, function(v) {
+      col <- dt[[v]]
+      !is.na(col) & col != 0
+    }))
+    need_imputation <- treated_mask & any_nonzero_wtr
+  } else {
+    need_imputation <- rep(FALSE, nrow(dt))
+  }
+  n_obs <- nrow(dt[!treated_mask | need_imputation, ])
+
+  new_did_impute(estimates = estimates, n_obs = n_obs)
 }
