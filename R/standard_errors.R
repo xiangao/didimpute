@@ -36,6 +36,12 @@ NULL
   # number of connected components it shares with prior FEs.
   # For the typical case (single active FE = t), no subtraction needed.
   if (length(active_fe) > 1L) {
+    # Warn if more than 2 active FEs: the pairwise max(comp_counts) approach
+    # is an approximation of pyhdfe's global bipartite connected-components count,
+    # exact only for <=2 fixed effects.
+    if (length(active_fe) > 2L) {
+      warning("compute_df_a: absorbed degrees of freedom for more than two non-nested fixed effects is approximate; cluster-robust standard errors may be mis-scaled in this configuration.")
+    }
     for (j in seq(2L, length(active_fe))) {
       f_j <- active_fe[j]
       prior <- active_fe[seq_len(j - 1L)]
