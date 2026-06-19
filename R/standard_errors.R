@@ -63,6 +63,10 @@ compute_effect_se <- function(dt, wtr, y, cluster, avgeffectsby, gr_var, fe) {
     data.table::set(dt, j = ".wtw_", value = NULL)
     dt <- merge(dt, cl_agg, by = gr_var, all.x = TRUE, sort = FALSE)
 
+    # Re-extract after first merge (row order may differ)
+    w_vec   <- dt[[w_col]]
+    wei_vec <- dt[["wei"]]
+
     # ---- smartdenom: sum(clusterweight * copy<w> * wei) per avgeffectsby (treated rows) ----
     clw_vec <- dt[["clusterweight"]]
     temp_weighted <- clw_vec * w_vec * wei_vec
