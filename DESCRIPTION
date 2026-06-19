@@ -1,0 +1,19 @@
+Package: didimpute
+Title: Difference-in-Differences Imputation Estimator (Borusyak, Jaravel & Spiess)
+Version: 0.0.0.9000
+Authors@R: person("Xao", role = c("aut","cre"), email = "xao@hbs.edu")
+Description: A faithful R port of the Python did_imputation package implementing the
+    imputation estimator of Borusyak, Jaravel and Spiess (2024) for staggered
+    difference-in-differences, with event-study aggregation and plotting.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Imports:
+    fixest,
+    data.table,
+    stats
+Suggests:
+    ggplot2,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.0.0
