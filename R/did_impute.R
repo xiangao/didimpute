@@ -112,6 +112,12 @@ did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
   imp <- .impute_y0(prep, y, controls, fe, cluster, aw)
   dt <- imp$df
 
+  # Set imput_resid on untreated rows (Python line 318); needed by compute_controls_se
+  if (length(controls) > 0) {
+    ycol_str <- y
+    dt[untreated == 1L, imput_resid := get(ycol_str) - y_hat]
+  }
+
   n_drop <- dt[is.na(y_hat), .N]
   if (n_drop > 0) {
     message(sprintf("Cannot impute for %d observations. Autosample used.", n_drop))
@@ -120,6 +126,22 @@ did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
   }
   ycol <- y
   dt[, tau := dt[[ycol]] - y_hat]
+
+  # ---- Seeded rank / collinearity check (Python lines 407-429) ---------------
+  if (length(controls) > 0) {
+    set.seed(seed)
+    dt_untr <- dt[untreated == 1L]
+    ymat_u <- matrix(stats::rnorm(nrow(dt_untr)), ncol = 1L)
+    xr_u <- fixest::demean(as.matrix(dt_untr[, ..controls]), dt_untr[, ..fe])
+    if (any(apply(abs(xr_u), 2L, max) < 1e-10))
+      stop("Could not run imputation for some observations because some controls are collinear in the D==0 subsample")
+    ymat_f <- matrix(stats::rnorm(nrow(dt)), ncol = 1L)
+    xr_f <- fixest::demean(as.matrix(dt[, ..controls]), dt[, ..fe])
+    df_a_untr <- .compute_df_a(dt_untr, fe, cluster)
+    df_a_full <- .compute_df_a(dt, fe, cluster)
+    if (df_a_full > df_a_untr)
+      stop("Could not run imputation for some observations because some absorbed variables/FEs are collinear in the D==0 subsample but not in the full sample")
+  }
 
   # ---- Aggregation (Task 6) -----------------------------------------------
   flag_wtr <- length(wtr) != 0
@@ -269,8 +291,27 @@ did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
     return(new_did_impute(estimates = estimates, n_obs = n_obs))
   }
 
-  se_out <- compute_effect_se(data.table::copy(dt), wtr, y, cluster, avgeffectsby, gr_var, fe)
+  se_out <- compute_effect_se(data.table::copy(dt), wtr, y, cluster, avgeffectsby, gr_var, fe,
+                              controls = controls)
   std_errors <- as.list(stats::setNames(se_out$se, names(estimates)))
-  new_did_impute(estimates = estimates, std_errors = std_errors, n_obs = n_obs,
-                 V = se_out$V)
+
+  # ---- Controls estimates and SEs (Task 8) ------------------------------------
+  controls_estimates <- NULL
+  controls_std_errors <- NULL
+  if (length(controls) > 0) {
+    controls_estimates <- as.list(imp$beta)
+    # Compute df_a on untreated subsample (matches pyhdfe algorithm.degrees with
+    # cluster_ids: drops FEs nested within cluster => only t contributes)
+    dt_untr_c <- dt[untreated == 1L]
+    df_a <- .compute_df_a(dt_untr_c, fe, cluster)
+    ctrl_se <- compute_controls_se(dt, controls, fe, cluster,
+                                   aw = if (is.null(aw)) NULL else aw,
+                                   df_a = df_a, beta = imp$beta)
+    controls_std_errors <- as.list(ctrl_se)
+  }
+
+  new_did_impute(estimates = estimates, std_errors = std_errors,
+                 controls_estimates = controls_estimates,
+                 controls_std_errors = controls_std_errors,
+                 n_obs = n_obs, V = se_out$V)
 }
