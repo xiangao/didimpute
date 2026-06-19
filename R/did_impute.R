@@ -48,11 +48,13 @@ did_impute <- function(df, y, i, t, Ei, controls = character(), fe = NULL,
                        minn = 30, saveweights = FALSE, shift = 0, pretrends = 0,
                        cluster = "", avgeffectsby = character(), leaveoneout = FALSE,
                        nose = FALSE, delta = NULL, seed = 1L) {
-  if (length(timecontrols) > 0) stop("timecontrols not yet supported")
-  if (length(unitcontrols) > 0) stop("unitcontrols not yet supported")
-  if (length(wtr) > 0 && !is.null(horizons)) stop("wtr and horizons cannot both be specified")
-  if (leaveoneout) stop("leaveoneout not yet supported")
-  if (length(hetby) > 0) stop("hetby not yet supported")
-  if (length(project) > 0) stop("project not yet supported")
-  stop("not implemented yet")   # filled in Task 6
+  if (length(timecontrols) + length(unitcontrols) > 0)
+    stop("Time and unit interacted controls are not added yet.")
+  if (length(wtr) != 0 && (length(horizons) > 0 || allhorizons || hbalance))
+    stop("User provided weights and horizons options can not be combined.")
+  if (leaveoneout)
+    stop("Leaveoneout standard errors and options are not added yet.")
+  if (length(hetby) > 0 || length(project) > 0)
+    stop("Hetby and project options are not added yet.")
+  stop("not implemented yet")
 }
